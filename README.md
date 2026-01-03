@@ -5,5 +5,8 @@ Prior research has consistently shown that students’ SAT scores are influenced
 
 ## Paper:
 M. Liu, W. Lu, L. Zhao, “Decoding SAT Scores: A Multifaceted Analysis  of Socioeconomic and Educational Influences Across Diverse Regions,” in Proceedings of 2024 IEEE Integrated STEM Education Conference (ISEC), doi: 10.1109/ISEC61299.2024.10665306. 
+https://ieeexplore.ieee.org/document/10665306
+
 Full paper submitted to Education Sciences (Submission received 26 December 2025). 
+
 
