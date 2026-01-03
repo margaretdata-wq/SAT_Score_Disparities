@@ -1,0 +1,207 @@
+---
+title: "New dataset"
+author: "Margaret Liu"
+date: "2023-12-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999, digits = 3)  # controls base R output
+
+# Package setup
+if(!require("pacman")) install.packages("pacman")
+
+pacman::p_load(car, tidyverse, dplyr, ggplot2, data.table, lubridate, 
+               glmnet, kableExtra, stargazer, scales, viridis, knitr, readr, usmap, pheatmap)
+```
+
+
+# Cleaning the data 
+
+
+##removing insignificant variables 
+```{r cars}
+library(dplyr)
+library(ggplot2)
+library(pacman)
+
+data.unedited <- read.csv("data/scores.csv", header = TRUE)
+data.clean1 <- select(data.unedited, 2,14,15,16,17,18,19,20,21,22)
+data.clean2 <- data.clean1%>%
+  na.omit() 
+data.clean3 <- data.clean2%>%
+  na.omit()%>%
+  mutate(sum_sat = ((Average.Score..SAT.Reading. + Average.Score..SAT.Writing.)/2) + Average.Score..SAT.Math.)
+data.clean4 <- select(data.clean3,-"Average.Score..SAT.Reading.") 
+data.clean5 <- select(data.clean4,-"Average.Score..SAT.Writing.") 
+data.clean6 <- select(data.clean5,-"Average.Score..SAT.Math.") 
+
+
+
+```
+##changing % to decimal
+```{r}
+data.clean7 <- data.clean6 %>%
+  mutate(Percent.White = as.numeric(gsub("%", "", Percent.White, fixed = TRUE)))%>%
+  mutate(Percent.Black = as.numeric(gsub("%", "", Percent.Black, fixed = TRUE)))%>%
+  mutate(Percent.Hispanic = as.numeric(gsub("%", "", Percent.Hispanic, fixed = TRUE)))%>%
+  mutate(Percent.Asian = as.numeric(gsub("%", "", Percent.Asian, fixed = TRUE)))%>%
+  mutate(Percent.Tested = as.numeric(gsub("%", "", Percent.Tested, fixed = TRUE)))
+
+data.clean7
+```
+
+
+
+
+##renaming the columns 
+```{r}
+data.final <- data.clean7 %>% 
+  rename(student.enrollment = Student.Enrollment) %>% 
+  rename(pct.white = Percent.White) %>%
+  rename(pct.african.american = Percent.Black) %>%
+  rename(pct.hispanic = Percent.Hispanic)%>%
+  rename(pct.asian = Percent.Asian)%>%
+  rename(pct.tested = Percent.Tested)%>%
+  rename(school.name = School.Name)
+
+
+
+```
+#EDA
+##Sum sat 
+```{r}
+data.final%>%
+  ggplot(aes(sum_sat)) +
+  geom_histogram(size= 1, alpha = .8, binwidth = 30, color="black", fill="hotpink1")
+```
+
+##student enrollment 
+```{r}
+data.final%>%
+  ggplot(aes(student.enrollment)) +
+  geom_histogram(size= 1, alpha = .8, binwidth = 100, color="blue", fill="green")
+```
+##percent tested 
+
+```{r}
+data.final%>%
+  ggplot(aes(pct.tested)) +
+  geom_histogram(size= 1, alpha = .8, binwidth = 1, color="purple", fill="royalblue")
+```
+##boxplot of race percentage by school 
+```{r}
+library("reshape2")  
+
+data.bp <- select(data.final, -"school.name", -"pct.tested", -"student.enrollment", -"sum_sat")
+
+data.bp_long <- melt(data.bp)
+
+ggplot(data.bp_long, aes(x = variable, y = value, fill = variable)) +           
+  geom_boxplot()+
+  xlab("Race") +
+  ylab("Percentage") +
+  ggtitle("Race Percentage by School") +
+  theme_bw() +
+  theme(legend.position = "none",
+  # adjust for margins around the plot; t: top; r: right; b: bottom; l: left
+  
+        plot.margin = margin(t = 5, r = 50, b = 5, l = 0, unit = "pt"),
+        axis.text.x = element_text(angle = -60, vjust = 0, hjust = 0))                               
+```
+#Multiple Linear Regression
+```{r}
+fit <- lm(sum_sat ~ student.enrollment + pct.white + pct.african.american + pct.hispanic + pct.asian + pct.tested, data.final)
+summary(fit)
+
+fit.backward.1 <- update(fit, .~. -student.enrollment)
+summary(fit.backward.1)
+
+fit.backward.2 <- update(fit.backward.1, .~. -pct.white)
+summary(fit.backward.2)
+
+fit.final <- update(fit.backward.2, .~. -pct.asian)
+summary(fit.final)
+
+
+```
+
+## Checking for Linearity and Homoscedasticity
+
+```{r}
+res1 <- plot(fit.final, 1)
+
+norm1 <- plot(fit.final, 2)
+```
+
+#Relaxed LASSO
+```{r}
+data.final1 <- data.final %>% select(-c(school.name))
+y <- data.final$sum_sat
+x.fl <- model.matrix(sum_sat~., data.final1)[, -1]
+set.seed(10)
+fit.cv <- cv.glmnet(x.fl, y, alpha = 1, nfolds=10)
+
+coef.min <- coef(fit.cv, s="lambda.min")  #s=c("lambda.1se","lambda.min") or lambda value
+coef.min <- coef.min[which(coef.min !=0),]   # get the non=zero coefficients
+
+coef.min  # the set of predictors chosen
+rownames(as.matrix(coef.min))
+var.min <- rownames(as.matrix(coef.min))[-1]
+
+
+```
+
+```{r}
+plot(fit.cv)
+```
+
+```{r}
+data.final2 <- data.final1[,c("sum_sat", var.min)]
+fit.min.lm <- lm(sum_sat~., data.final2)
+summary(fit.min.lm)
+
+fit.lm.backward.1 <- update(fit.min.lm, .~. - pct.asian)
+summary(fit.lm.backward.1)
+
+fit.lm.final<- update(fit.lm.backward.1, .~. -student.enrollment)
+summary(fit.lm.final)
+
+```
+#confidence interval
+
+```{r}
+confint.default(fit.lm.final)
+```
+
+#decision tree
+```{r}
+library(rpart.plot)
+library(partykit)
+
+data.tree <- select(data.final, -"school.name")
+fit1<- rpart(sum_sat~., data.tree)
+par(mfrow = c(1,2))
+plot(as.party(fit1, main = "Decision Tree"))
+
+```
+
+#correlgram 
+```{r}
+
+datacorr <- data.final[, -c(1)]
+
+datacorr
+
+# Compute correlation matrix
+corr_matrix <- cor(datacorr)
+
+# Load library
+install.packages("corrplot")
+library(corrplot)
+
+# Plot heatmap
+corrplot(corr_matrix, method = "color", type = "upper", 
+         tl.col = "black", tl.srt = 45)
+```
